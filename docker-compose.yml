@@ -1,0 +1,11 @@
+#TODO
+version: '3'
+
+services:
+  app:
+    build: .
+    command: ["python", "app.py"]
+    environment:
+      REDIS_HOST: redis
+  redis:
+    image: bitnami/redis:5.0.12
