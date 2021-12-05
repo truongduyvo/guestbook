@@ -1,0 +1,214 @@
+version: 2.1
+
+orbs:
+  python: circleci/python@0.2.1  
+
+commands:
+  setup_remote_docker_cmd:
+    steps:
+      - setup_remote_docker:
+          version: 19.03.13
+          docker_layer_caching: true
+  setup_docker_hub:
+    steps:
+      - run:
+          name: Docker hub login
+          command:  |
+            docker login -u ${DOCKER_HUB_USER} -p ${DOCKERHUB_PWD}
+
+jobs:
+  test:
+    docker:
+      - image: circleci/python:3.7
+    steps:
+      - checkout
+      - run:
+          command: |
+            echo Running test cases
+          name: Unit Test All
+
+
+# On PR branch
+  pr-dockerize:
+    docker:
+      - image: circleci/python:3.7
+    environment:
+      DOCKER_BUILDKIT: 1
+    steps:
+      - setup_remote_docker_cmd
+      - setup_docker_hub
+      - run:
+          name: Prepare env
+          command: |
+            echo "export IMAGE_TAG=pr-${CIRCLE_SHA1:0:7}" >> $BASH_ENV
+      # TODO
+
+  deploy-on-pr:
+    docker:
+      - image: gcr.io/google.com/cloudsdktool/cloud-sdk:350.0.0-alpine
+    steps:
+      - run:
+          name: Prepare env
+          command: |
+            echo "export IMAGE_TAG=pr-${CIRCLE_SHA1:0:7}" >> $BASH_ENV
+      # TODO
+
+# On the master/main branch
+# # Custom-step:
+  master-dockerize:
+    docker:
+      - image: circleci/python:3.7
+    environment:
+      DOCKER_BUILDKIT: 1
+    steps:
+      - setup_remote_docker_cmd
+      - setup_docker_hub
+      - run:
+          name: Prepare env
+          command: |
+            echo "export IMAGE_TAG=m-${CIRCLE_SHA1:0:7}" >> $BASH_ENV
+      # TODO
+
+# # Deploy
+  deploy-on-master:
+    docker:
+      - image: gcr.io/google.com/cloudsdktool/cloud-sdk:350.0.0-alpine
+    steps:
+      - checkout
+      - run:
+          name: Prepare env
+          command: |
+            echo "export IMAGE_TAG=m-${CIRCLE_SHA1:0:7}" >> $BASH_ENV
+      # TODO
+
+# # Change logs
+  custom-step:
+    docker:
+      - image: gcr.io/google.com/cloudsdktool/cloud-sdk:350.0.0-alpine
+    steps:
+      - run:
+          name: Preview custom-step
+          command: |
+            echo running custom steps
+
+
+
+# Release branches
+# # Build, Ship
+  release-dockerize:
+    docker:
+      - image: circleci/python:3.7
+    environment:
+      DOCKER_BUILDKIT: 1
+    steps:
+      - setup_remote_docker_cmd
+      - setup_docker_hub
+      - run:
+          name: Prepare env
+          command: |
+            echo "export IMAGE_TAG=${CIRCLE_BRANCH:9}-${CIRCLE_SHA1:0:7}" >> $BASH_ENV
+      # TODO
+
+# # Deploy
+  deploy-on-staging:
+    docker:
+      - image: gcr.io/google.com/cloudsdktool/cloud-sdk:350.0.0-alpine
+    steps:
+      - run:
+          name: Prepare env
+          command: |
+            echo "export IMAGE_TAG=${CIRCLE_BRANCH:9}-${CIRCLE_SHA1:0:7}" >> $BASH_ENV
+          # TODO
+
+  deploy-on-production:
+    docker:
+      - image: gcr.io/google.com/cloudsdktool/cloud-sdk:350.0.0-alpine
+    steps:
+      - run:
+          name: Prepare env
+          command: |
+            echo "export IMAGE_TAG=${CIRCLE_BRANCH:9}-${CIRCLE_SHA1:0:7}" >> $BASH_ENV
+          # TODO
+
+  
+workflows:
+  develop:
+    jobs:
+      - test:
+          filters:
+            tags:
+              only: /.*/
+      - pr-approve-dockerize:
+          type: approval
+          requires:
+          - test
+          filters:
+            branches:
+              ignore:
+              - master
+              - /^releases/(\d+.\d+.\d+)(-.*)?/
+      - pr-dockerize:
+          requires:
+          - pr-approve-dockerize
+          filters:
+            branches:
+              ignore:
+              - master
+              - /^releases/(\d+.\d+.\d+)(-.*)?/
+      - deploy-on-pr:
+          requires:
+          - pr-dockerize
+          filters:
+            branches:
+              ignore:
+              - master
+              - /^releases/(\d+.\d+.\d+)(-.*)?/
+  master:
+    jobs:
+      - master-dockerize:
+          context: sre-pipeline
+          filters:
+            branches:
+              only:
+              - master
+      - deploy-on-master:
+          context: sre-pipeline
+          requires:
+          - master-dockerize
+          filters:
+            branches:
+              only:
+              - master
+      - custom-step:
+          requires:
+          - deploy-on-master
+          filters:
+            branches:
+              only:
+              - master
+
+  release:
+    jobs:
+    - release-dockerize:
+        filters:
+          branches:
+            only: /^releases/(\d+.\d+.\d+)(-.*)?/
+    - deploy-on-staging:
+        requires:
+        - release-dockerize
+        filters:
+          branches:
+            only: /^releases/(\d+.\d+.\d+)(-.*)?/
+    - wait-approve-deploy:
+        type: approval
+        requires:
+        - deploy-on-staging
+        filters:
+          branches:
+            only: /^releases/(\d+.\d+.\d+)(-.*)?/
+    - deploy-on-production:
+        requires:
+        - wait-approve-deploy
+        filters:
+          branches:
+            only: /^releases/(\d+.\d+.\d+)(-.*)?/

@@ -1,11 +1,14 @@
-#TODO
 version: '3'
 
 services:
   app:
     build: .
-    command: ["python", "app.py"]
+    command: ["python", "/app/src/app.py"]
     environment:
       REDIS_HOST: redis
+    ports:
+      - 8000:80
   redis:
     image: bitnami/redis:5.0.12
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
