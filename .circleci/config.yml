@@ -166,13 +166,11 @@ workflows:
   master:
     jobs:
       - master-dockerize:
-          context: sre-pipeline
           filters:
             branches:
               only:
               - master
       - deploy-on-master:
-          context: sre-pipeline
           requires:
           - master-dockerize
           filters:
